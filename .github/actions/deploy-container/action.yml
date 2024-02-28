@@ -1,0 +1,110 @@
+name: "Deploy Container"
+description: "Deploy a container"
+
+inputs:
+  github_token:
+    description: "GitHub token"
+    required: true
+    default: ${{ github.token }}
+  project_id:
+    description: "A unique identifier for the project. Must be filename safe."
+    required: true
+  release_tag:
+    description: "The version of the release to deploy"
+    required: true
+  ssh_deploy_host:
+    description: "SSH host for deployment"
+    required: true
+  ssh_deploy_user:
+    description: "SSH username for deployment"
+    required: true
+  ssh_deploy_key:
+    description: "SSH key for deployment"
+    required: true
+  ssh_deploy_port:
+    description: "SSH port for deployment"
+    required: true
+    default: "22"
+  docker_compose_file:
+    description: "Full path to the Docker compose file"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Generate image tag
+      id: generate_image_tag
+      shell: bash
+      run: |
+        projectName="${{ inputs.project_id }}"
+        projectNameLower="${projectName,,}"
+        echo "image_tag=${projectNameLower}:${{ inputs.release_tag }}" >> $GITHUB_OUTPUT
+
+    - uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.github_repository }}
+        ref: ${{ inputs.release_tag }}
+        token: ${{ inputs.github_token }}
+
+    - name: Set up build directory
+      uses: appleboy/ssh-action@master
+      with:
+        script_stop: true
+        host: ${{ inputs.ssh_deploy_host }}
+        username: ${{ inputs.ssh_deploy_user }}
+        key: ${{ inputs.ssh_deploy_key }}
+        port: ${{ inputs.ssh_deploy_port }}
+        script: |
+          rm -rf /tmp/${{ steps.generate_image_tag.outputs.image_tag }}/
+          mkdir -p /tmp/${{ steps.generate_image_tag.outputs.image_tag }}
+
+    - name: Copy to server
+      uses: appleboy/scp-action@master
+      with:
+        host: ${{ inputs.ssh_deploy_host }}
+        username: ${{ inputs.ssh_deploy_user }}
+        key: ${{ inputs.ssh_deploy_key }}
+        port: ${{ inputs.ssh_deploy_port }}
+        source: "./"
+        target: "/tmp/${{ steps.generate_image_tag.outputs.image_tag }}"
+
+    - name: Build container
+      uses: appleboy/ssh-action@master
+      with:
+        script_stop: true
+        host: ${{ inputs.ssh_deploy_host }}
+        username: ${{ inputs.ssh_deploy_user }}
+        key: ${{ inputs.ssh_deploy_key }}
+        port: ${{ inputs.ssh_deploy_port }}
+        script: |
+          cd /tmp/${{ steps.generate_image_tag.outputs.image_tag }}
+          docker build -t "${{ steps.generate_image_tag.outputs.image_tag }}" . --progress=plain
+
+    - name: Deploy container
+      uses: appleboy/ssh-action@master
+      env:
+        DOCKER_COMPOSE_FILE: ${{ inputs.docker_compose_file }}
+        DEPLOY_IMAGE_NAME: ${{ steps.generate_image_tag.outputs.image_tag }}
+      with:
+        script_stop: true
+        host: ${{ inputs.ssh_deploy_host }}
+        username: ${{ inputs.ssh_deploy_user }}
+        key: ${{ inputs.ssh_deploy_key }}
+        port: ${{ inputs.ssh_deploy_port }}
+        envs: DOCKER_COMPOSE_FILE, DEPLOY_IMAGE_NAME
+        script: |
+          export DOCKER_COMPOSE_FILE=$DOCKER_COMPOSE_FILE
+          export DEPLOY_IMAGE_NAME=$DEPLOY_IMAGE_NAME
+          docker compose -f ${{ inputs.docker_compose_file }} down
+          docker compose -f ${{ inputs.docker_compose_file }} up -d
+
+    - name: Clean up build directory
+      uses: appleboy/ssh-action@master
+      with:
+        script_stop: true
+        host: ${{ inputs.ssh_deploy_host }}
+        username: ${{ inputs.ssh_deploy_user }}
+        key: ${{ inputs.ssh_deploy_key }}
+        port: ${{ inputs.ssh_deploy_port }}
+        script: |
+          rm -rf /tmp/${{ steps.generate_image_tag.outputs.image_tag }}/
