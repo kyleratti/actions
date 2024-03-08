@@ -28,6 +28,10 @@ inputs:
   docker_compose_file:
     description: "Full path to the Docker compose file"
     required: true
+  docker_file:
+    description: "The path to the Dockerfile to use for the build"
+    required: false
+    default: Dockerfile
 
 runs:
   using: "composite"
@@ -78,7 +82,7 @@ runs:
         port: ${{ inputs.ssh_deploy_port }}
         script: |
           cd /tmp/${{ steps.generate_image_tag.outputs.image_tag }}
-          docker build -t "${{ steps.generate_image_tag.outputs.image_tag }}" . --progress=plain
+          docker build -t "${{ steps.generate_image_tag.outputs.image_tag }}" -f ${{ inputs.docker_file }} . --progress=plain
 
     - name: Deploy container
       uses: appleboy/ssh-action@master
