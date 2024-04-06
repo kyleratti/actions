@@ -32,6 +32,10 @@ inputs:
     description: "The path to the Dockerfile to use for the build"
     required: false
     default: Dockerfile
+  dockerfile_working_directory:
+    description: "The working directory to use when building"
+    required: false
+    default: .
 
 runs:
   using: "composite"
@@ -81,7 +85,7 @@ runs:
         key: ${{ inputs.ssh_deploy_key }}
         port: ${{ inputs.ssh_deploy_port }}
         script: |
-          cd /tmp/${{ steps.generate_image_tag.outputs.image_tag }}
+          cd /tmp/${{ steps.generate_image_tag.outputs.image_tag }}/${{ inputs.dockerfile_working_directory }}
           docker build -t "${{ steps.generate_image_tag.outputs.image_tag }}" -f ${{ inputs.docker_file }} . --progress=plain
 
     - name: Deploy container
